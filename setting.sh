@@ -1,2 +1,5 @@
 export APPNAME="kube-dev"
 export VERSION="0.0.1"
+export NAMESPACE="tline-dev"
+export ECR_HOST="925741509387.dkr.ecr.us-west-2.amazonaws.com"
+export ECR_REPO="${ECR_HOST}/kube-docker-jupyter:${APPNAME}-${VERSION}"
