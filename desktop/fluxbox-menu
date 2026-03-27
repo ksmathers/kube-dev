@@ -1,0 +1,17 @@
+[begin] (Dev Environment)
+  [exec] (Terminal) {xterm}
+  [exec] (Google Chrome) {google-chrome-stable --no-sandbox --disable-dev-shm-usage --disable-gpu}
+  [separator]
+  [submenu] (Open in Browser)
+    [exec] (VS Code) {google-chrome-stable --no-sandbox --disable-dev-shm-usage --disable-gpu --app=http://localhost:13337}
+    [exec] (JupyterLab) {google-chrome-stable --no-sandbox --disable-dev-shm-usage --disable-gpu --app=http://localhost:8888}
+  [end]
+  [separator]
+  [submenu] (Fluxbox)
+    [config] (Configuration)
+    [reconfig] (Reconfigure)
+    [restart] (Restart)
+    [separator]
+    [exit] (Exit)
+  [end]
+[end]
