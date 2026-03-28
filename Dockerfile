@@ -113,25 +113,38 @@ print("noVNC patched OK")
 PYEOF
 
 # Install VS Code Server (code-server)
-RUN curl -fksSL https://code-server.dev/install.sh | sh
+# Set insecure=true in curlrc so that the install.sh child curl calls also
+# bypass SSL inspection. Removed afterwards to avoid leaking into the image.
+RUN echo "insecure" > /root/.curlrc \
+    && curl -fksSL https://code-server.dev/install.sh | sh \
+    && rm /root/.curlrc
 
 # Install Google Chrome
+# apt needs its own SSL bypass for dl.google.com (it ignores .curlrc).
+# We write a per-host apt config that disables TLS verification for that repo
+# only, then remove it after the package is installed.
 RUN curl -fksSL https://dl.google.com/linux/linux_signing_key.pub \
     | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] \
 https://dl.google.com/linux/chrome/deb/ stable main" \
     > /etc/apt/sources.list.d/google-chrome.list \
+    && echo 'Acquire::https::dl.google.com::Verify-Peer "false";' \
+       > /etc/apt/apt.conf.d/99google-ssl-bypass \
     && apt-get update && apt-get install -y --no-install-recommends \
     google-chrome-stable \
+    && rm -f /etc/apt/apt.conf.d/99google-ssl-bypass \
     && rm -rf /var/lib/apt/lists/*
 
 # Install micromamba (Conda-compatible) and configure conda-forge
+# ssl_verify: false is set in .condarc during install to bypass corporate SSL
+# inspection, then replaced with the secure default afterwards.
 RUN curl -kLs https://micro.mamba.pm/api/micromamba/linux-64/latest \
     | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba \
     && mkdir -p /etc/conda /opt/conda \
-    && printf "channels:\n  - conda-forge\nchannel_priority: strict\n" > /etc/conda/.condarc \
+    && printf "channels:\n  - conda-forge\nchannel_priority: strict\nssl_verify: false\n" > /etc/conda/.condarc \
     && micromamba install -y -n base -c conda-forge python=3.12 pip jupyterlab notebook \
-    && micromamba clean --all --yes
+    && micromamba clean --all --yes \
+    && printf "channels:\n  - conda-forge\nchannel_priority: strict\n" > /etc/conda/.condarc
 
 # Make conda available in login shells
 RUN printf "export MAMBA_ROOT_PREFIX=/opt/conda\nexport PATH=/opt/conda/bin:$PATH\n" > /etc/profile.d/mamba.sh

@@ -21,6 +21,8 @@ for arg in "$@"; do
     esac
 done
 
+JOB_NAME="dev-environment-$(echo "$USER" | tr '[:upper:]' '[:lower:]')"
+
 # -- 0. Push image to ECR ------------------------------------------------------
 
 push_ecr() {
@@ -48,25 +50,25 @@ spec:
       storage: ${STORAGE}
 EOF
 
-# ── 2. Deployment ─────────────────────────────────────────────────────────────
-echo "Applying Deployment '${DEPLOY_NAME}' (image: ${IMAGE}, memory: ${MEMORY_LIMIT})..."
+# ── 2. Job ───────────────────────────────────────────────────────────────────
+echo "Creating Job '${JOB_NAME}' (image: ${ECR_REPO}, memory: ${MEMORY_LIMIT})..."
 kubectl apply -n "${NAMESPACE}" -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: ${DEPLOY_NAME}
+  name: ${JOB_NAME}
   labels:
     app: ${DEPLOY_NAME}
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: ${DEPLOY_NAME}
+  ttlSecondsAfterFinished: 60
+  backoffLimit: 0
   template:
     metadata:
       labels:
         app: ${DEPLOY_NAME}
+        job-name: ${JOB_NAME}
     spec:
+      restartPolicy: Never
       containers:
         - name: ${DEPLOY_NAME}
           image: ${ECR_REPO}
@@ -87,17 +89,6 @@ spec:
               containerPort: 13337
             - name: jupyter
               containerPort: 8888
-          readinessProbe:
-            tcpSocket:
-              port: novnc
-            initialDelaySeconds: 15
-            periodSeconds: 5
-            failureThreshold: 12
-          livenessProbe:
-            tcpSocket:
-              port: novnc
-            initialDelaySeconds: 30
-            periodSeconds: 10
           volumeMounts:
             - name: workspace
               mountPath: /workspace
@@ -114,41 +105,29 @@ spec:
             claimName: ${PVC_NAME}
 EOF
 
-# ── 3. Service ────────────────────────────────────────────────────────────────
-echo "Applying Service '${SVC_NAME}'..."
-kubectl apply -n "${NAMESPACE}" -f - <<EOF
-apiVersion: v1
-kind: Service
-metadata:
-  name: ${SVC_NAME}
-  labels:
-    app: ${DEPLOY_NAME}
-spec:
-  selector:
-    app: ${DEPLOY_NAME}
-  type: ClusterIP
-  ports:
-    - name: novnc
-      port: 6080
-      targetPort: novnc
-    - name: vscode
-      port: 13337
-      targetPort: vscode
-    - name: jupyter
-      port: 8888
-      targetPort: jupyter
-EOF
+# ── 3. Wait for the Job pod to reach Running ──────────────────────────────────
+echo "Waiting for Job pod to start running..."
+for i in $(seq 1 60); do
+    POD_NAME=$(kubectl get pod -n "${NAMESPACE}" -l "job-name=${JOB_NAME}" \
+        --field-selector=status.phase=Running \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    if [[ -n "${POD_NAME}" ]]; then
+        echo "Pod is running: ${POD_NAME}"
+        break
+    fi
+    echo "  waiting for pod... (${i}/60)"
+    sleep 2
+done
+if [[ -z "${POD_NAME:-}" ]]; then
+    echo "ERROR: Pod did not reach Running state in time."
+    kubectl describe job "${JOB_NAME}" -n "${NAMESPACE}"
+    exit 1
+fi
 
-# ── 4. Wait for pod to be ready ───────────────────────────────────────────────
-echo "Waiting for deployment '${DEPLOY_NAME}' to become ready..."
-kubectl rollout status deployment/"${DEPLOY_NAME}" -n "${NAMESPACE}" --timeout=300s
-
-# ── 4b. Confirm noVNC is actually responding inside the pod ──────────────────
+# ── 4. Confirm noVNC is actually responding inside the pod ───────────────────
 echo "Confirming noVNC service is up inside the pod..."
-POD_NAME=$(kubectl get pod -n "${NAMESPACE}" -l app="${DEPLOY_NAME}" \
-    --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
 for i in $(seq 1 30); do
-    if kubectl exec -n "${NAMESPACE}" "${POD_NAME}" -- \
+    if kubectl exec -n "${NAMESPACE}" "job/${JOB_NAME}" -- \
             bash -c 'exec 3<>/dev/tcp/127.0.0.1/6080' 2>/dev/null; then
         echo "noVNC is ready."
         break
@@ -157,15 +136,4 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-# ── 5. Port-forward ───────────────────────────────────────────────────────────
-echo ""
-echo "Starting port-forward (Ctrl-C to stop)..."
-echo "  NoVNC Shell:    http://localhost:7080/vnc.html?host=localhost&port=7080"
-echo "  VS Code Server: http://localhost:23337"
-echo "  JupyterLab:     http://localhost:9888"
-echo ""
-kubectl port-forward -n "${NAMESPACE}" \
-    "svc/${SVC_NAME}" \
-    7080:6080 \
-    23337:13337 \
-    9888:8888
+echo "Job '${JOB_NAME}' is ready. Run ./kube-forward.sh to connect."
