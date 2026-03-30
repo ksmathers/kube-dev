@@ -1,6 +1,6 @@
 #!/bin/bash
 . setting.sh
-export DOCKER_DEFAULT_PLATFORM=linux/amd64
+export DOCKER_DEFAULT_PLATFORM=linux/amd64    # Ensure we build for AMD64, even on Apple Silicon hosts
 
 WITH_CA=0
 for arg in "$@"; do
@@ -28,6 +28,7 @@ fi
 
 docker build "${BUILD_ARGS[@]}" -t ${APPNAME}:${VERSION} .
 docker tag ${APPNAME}:${VERSION} ${APPNAME}:latest
+echo "Built image: ${APPNAME}:${VERSION}"
 
 # Clean up the CA cert copy from the build context
 if [[ $WITH_CA -eq 1 ]]; then

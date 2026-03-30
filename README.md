@@ -157,14 +157,27 @@ These can be overridden in `dev-environment.yaml` under `env:`:
 
 ## Resource limits
 
-Default requests/limits defined in the Deployment:
+Default requests/limits are controlled by a **t-shirt size** passed via `--size` (or the `SIZE` env var). The default is `m`.
 
-| | CPU | Memory |
-|---|---|---|
-| **Request** | 500m | 1 Gi |
-| **Limit** | 2 | 4 Gi |
+| Size | vCPU | Memory | AWS equivalent |
+|---|---|---|---|
+| `small` | 1 | 2 Gi | m5.small |
+| `medium` | 2 | 4 Gi | m5.medium |
+| `large` *(default)* | 2 | 8 Gi | m5.large |
+| `xlarge` | 4 | 16 Gi | m5.xlarge |
+| `2xlarge` | 8 | 32 Gi | m5.2xlarge |
+| `4xlarge` | 16 | 64 Gi | m5.4xlarge |
 
-Adjust these in `dev-environment.yaml` to match your cluster's capacity.
+```bash
+# Default (large — 2 vCPU, 8 Gi)
+sh run-kube.sh
+
+# 2xlarge for data analytics, with image push
+sh run-kube.sh --push --size=2xlarge
+
+# Override via environment variable
+SIZE=xlarge sh run-kube.sh
+```
 
 ---
 

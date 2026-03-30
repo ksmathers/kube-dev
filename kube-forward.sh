@@ -1,10 +1,17 @@
 #!/bin/bash
 set -euo pipefail
-. arad-de
+stslogin() {
+    if [ -x "$(command -v arad-de)" ]; then
+    . arad-de
+    fi
+}
+
+stslogin
 . setting.sh
 
 NAMESPACE="${NAMESPACE:-default}"
-JOB_NAME="dev-environment-$(echo "$USER" | tr '[:upper:]' '[:lower:]')"
+LCUSER=`echo $USER | tr '[:upper:]' '[:lower:]'`
+JOB_NAME="${APPNAME}-${LCUSER}"
 
 echo "  NoVNC Shell:    http://localhost:7080/vnc.html?host=localhost&port=7080"
 echo "  VS Code Server: http://localhost:23337"
@@ -22,8 +29,8 @@ while true; do
         7080:6080 \
         23337:13337 \
         9888:8888 || true
-    echo "[$(date '+%H:%M:%S')] Port-forward exited. Re-sourcing credentials and retrying in 5s..."
+    echo "[$(date '+%H:%M:%S')] Port-forward exited. Refreshing STS credentials and retrying in 5s..."
     sleep 5
     # Re-source credentials so the refreshed STS token is picked up
-    . arad-de
+    stslogin
 done

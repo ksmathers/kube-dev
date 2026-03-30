@@ -1,38 +1,67 @@
 #!/bin/bash
 set -euo pipefail
 . setting.sh
+. $HOME/.docker-repository.sh
 
 NAMESPACE="${NAMESPACE:-default}"
-PVC_NAME="dev-workspace-pvc"
-DEPLOY_NAME="dev-environment"
-SVC_NAME="dev-environment"
+LCUSER=`echo $USER | tr '[:upper:]' '[:lower:]'`
+PVC_NAME="dev-workspace-pvc-${LCUSER}"
+DEPLOY_NAME="dev-environment-${LCUSER}"
 IMAGE="${APPNAME}:${VERSION}"
 STORAGE="100Gi"
-MEMORY_REQUEST="32Gi"
-MEMORY_LIMIT="32Gi"
-CPU_REQUEST="2"
-CPU_LIMIT="4"
 
-ECR_PUSH=0
+# ── T-shirt sizes (AWS general-purpose memory convention) ────────────────────
+#   small    1 vCPU   2 GiB
+#   medium   2 vCPU   4 GiB
+#   large    2 vCPU   8 GiB   (default)
+#   xlarge   4 vCPU  16 GiB
+#   2xlarge  8 vCPU  32 GiB
+#   4xlarge 16 vCPU  64 GiB
+apply_size() {
+    case "$1" in
+        small)   CPU_REQUEST="1";  CPU_LIMIT="1";  MEMORY_REQUEST="2Gi";  MEMORY_LIMIT="2Gi"  ;;
+        medium)  CPU_REQUEST="1";  CPU_LIMIT="2";  MEMORY_REQUEST="4Gi";  MEMORY_LIMIT="4Gi"  ;;
+        large)   CPU_REQUEST="2";  CPU_LIMIT="2";  MEMORY_REQUEST="8Gi";  MEMORY_LIMIT="8Gi"  ;;
+        xlarge)  CPU_REQUEST="4";  CPU_LIMIT="4";  MEMORY_REQUEST="16Gi"; MEMORY_LIMIT="16Gi" ;;
+        2xlarge) CPU_REQUEST="8";  CPU_LIMIT="8";  MEMORY_REQUEST="32Gi"; MEMORY_LIMIT="32Gi" ;;
+        4xlarge) CPU_REQUEST="16"; CPU_LIMIT="16"; MEMORY_REQUEST="64Gi"; MEMORY_LIMIT="64Gi" ;;
+        *) echo "ERROR: Unknown size '$1'. Valid sizes: small, medium, large, xlarge, 2xlarge, 4xlarge"; exit 1 ;;
+    esac
+}
+SIZE="${SIZE:-large}"
+apply_size "${SIZE}"
+echo "Size: ${SIZE}  (CPU ${CPU_REQUEST}, RAM ${MEMORY_REQUEST})"
+
+PUSH_IMAGE=0
 for arg in "$@"; do
     case "$arg" in
-        --push-ecr) ECR_PUSH=1 ;;
+        --push) PUSH_IMAGE=1 ;;
+        --size=*) SIZE="${arg#--size=}"
+            apply_size "${SIZE}"
+            echo "Size override: ${SIZE}  (CPU ${CPU_REQUEST}, RAM ${MEMORY_REQUEST})"
+            ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
 
-JOB_NAME="dev-environment-$(echo "$USER" | tr '[:upper:]' '[:lower:]')"
+JOB_NAME="${APPNAME}-${LCUSER}"
 
 # -- 0. Push image to ECR ------------------------------------------------------
 
-push_ecr() {
-    echo "Pushing image to ECR: ${ECR_REPO}..."
-    docker tag "${IMAGE}" "${ECR_REPO}"
-    aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin ${ECR_HOST} >/dev/null
-    docker push "${ECR_REPO}"
+push_image() {
+    echo "Pushing image: ${REPOSITORY_TAG}..."
+    docker tag "${IMAGE}" "${REPOSITORY_TAG}"
+    if [ "${ECR_LOGIN}" -eq 1 ]; then
+        echo "Logging in to ECR..."
+        aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin ${REPOSITORY_HOST} >/dev/null
+    fi
+    docker push "${REPOSITORY_TAG}"
 }
-if [ "${ECR_PUSH}" -eq 1 ]; then
-    push_ecr
+
+if [ "${PUSH_IMAGE}" -eq 1 ]; then
+    push_image
+else
+    echo "Skipping image push. Use --push to push the image to ${REPOSITORY_TAG}."
 fi
 
 # ── 1. PersistentVolumeClaim ──────────────────────────────────────────────────
@@ -51,7 +80,7 @@ spec:
 EOF
 
 # ── 2. Job ───────────────────────────────────────────────────────────────────
-echo "Creating Job '${JOB_NAME}' (image: ${ECR_REPO}, memory: ${MEMORY_LIMIT})..."
+echo "Creating Job '${JOB_NAME}' (image: ${REPOSITORY_TAG}, memory: ${MEMORY_LIMIT})..."
 kubectl apply -n "${NAMESPACE}" -f - <<EOF
 apiVersion: batch/v1
 kind: Job
@@ -71,7 +100,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: ${DEPLOY_NAME}
-          image: ${ECR_REPO}
+          image: ${REPOSITORY_TAG}
           imagePullPolicy: IfNotPresent
           env:
             - name: NOVNC_PORT
