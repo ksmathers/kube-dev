@@ -1,0 +1,32 @@
+! ── XTerm appearance ──────────────────────────────────────────────────────────
+XTerm*faceName:         Liberation Mono
+XTerm*faceSize:         11
+XTerm*background:       #1e1e1e
+XTerm*foreground:       #d4d4d4
+XTerm*cursorColor:      #aeafad
+XTerm*cursorBlink:      false
+XTerm*scrollBar:        false
+XTerm*saveLines:        5000
+XTerm*borderWidth:      0
+XTerm*internalBorder:   8
+XTerm*termName:         xterm-256color
+XTerm*utf8:             1
+XTerm*metaSendsEscape:  true
+
+! ── Colour palette (VS Code Dark+) ───────────────────────────────────────────
+XTerm*color0:           #1e1e1e
+XTerm*color1:           #f44747
+XTerm*color2:           #4ec994
+XTerm*color3:           #ce9178
+XTerm*color4:           #569cd6
+XTerm*color5:           #c586c0
+XTerm*color6:           #9cdcfe
+XTerm*color7:           #d4d4d4
+XTerm*color8:           #555555
+XTerm*color9:           #f44747
+XTerm*color10:          #4ec994
+XTerm*color11:          #dcdcaa
+XTerm*color12:          #569cd6
+XTerm*color13:          #c586c0
+XTerm*color14:          #9cdcfe
+XTerm*color15:          #ffffff

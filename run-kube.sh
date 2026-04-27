@@ -33,9 +33,14 @@ apply_size "${SIZE}"
 echo "Size: ${SIZE}  (CPU ${CPU_REQUEST}, RAM ${MEMORY_REQUEST})"
 
 PUSH_IMAGE=0
+CLEAN=0
+BUILD_IMAGE=0
 for arg in "$@"; do
     case "$arg" in
         --push) PUSH_IMAGE=1 ;;
+        --build) BUILD_IMAGE=1 ;;
+        --build-push) BUILD_IMAGE=1; PUSH_IMAGE=1 ;;
+        --clean) CLEAN=1 ;;
         --size=*) SIZE="${arg#--size=}"
             apply_size "${SIZE}"
             echo "Size override: ${SIZE}  (CPU ${CPU_REQUEST}, RAM ${MEMORY_REQUEST})"
@@ -46,7 +51,12 @@ done
 
 JOB_NAME="${APPNAME}-${LCUSER}"
 
-# -- 0. Push image to ECR ------------------------------------------------------
+# -- 0. Build and/or push image -----------------------------------------------
+
+if [ "${BUILD_IMAGE}" -eq 1 ]; then
+    echo "Building image..."
+    bash "$(dirname "$0")/build.sh"
+fi
 
 push_image() {
     echo "Pushing image: ${REPOSITORY_TAG}..."
@@ -65,6 +75,16 @@ else
 fi
 
 # ── 1. PersistentVolumeClaim ──────────────────────────────────────────────────
+if [[ "${CLEAN}" -eq 1 ]]; then
+    if kubectl get job "${JOB_NAME}" -n "${NAMESPACE}" &>/dev/null; then
+        echo "[--clean] Deleting existing Job '${JOB_NAME}'..."
+        kubectl delete job "${JOB_NAME}" -n "${NAMESPACE}" --wait=true
+    fi
+    if kubectl get pvc "${PVC_NAME}" -n "${NAMESPACE}" &>/dev/null; then
+        echo "[--clean] Deleting PersistentVolumeClaim '${PVC_NAME}'..."
+        kubectl delete pvc "${PVC_NAME}" -n "${NAMESPACE}" --wait=true
+    fi
+fi
 echo "Applying PersistentVolumeClaim '${PVC_NAME}' (${STORAGE})..."
 kubectl apply -n "${NAMESPACE}" -f - <<EOF
 apiVersion: v1
@@ -80,6 +100,11 @@ spec:
 EOF
 
 # ── 2. Job ───────────────────────────────────────────────────────────────────
+# Delete any existing job first (Jobs are immutable once created)
+if kubectl get job "${JOB_NAME}" -n "${NAMESPACE}" &>/dev/null; then
+    echo "Deleting existing Job '${JOB_NAME}'..."
+    kubectl delete job "${JOB_NAME}" -n "${NAMESPACE}" --wait=true
+fi
 echo "Creating Job '${JOB_NAME}' (image: ${REPOSITORY_TAG}, memory: ${MEMORY_LIMIT})..."
 kubectl apply -n "${NAMESPACE}" -f - <<EOF
 apiVersion: batch/v1
@@ -105,22 +130,14 @@ spec:
           env:
             - name: NOVNC_PORT
               value: "6080"
-            - name: CODE_SERVER_PORT
-              value: "13337"
             - name: VNC_PORT
               value: "5901"
-            - name: JUPYTER_PORT
-              value: "8888"
           ports:
             - name: novnc
               containerPort: 6080
-            - name: vscode
-              containerPort: 13337
-            - name: jupyter
-              containerPort: 8888
           volumeMounts:
             - name: workspace
-              mountPath: /workspace
+              mountPath: /home/dev
           resources:
             requests:
               cpu: "${CPU_REQUEST}"

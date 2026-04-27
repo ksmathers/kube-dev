@@ -1,11 +1,9 @@
 [begin] (Dev Environment)
   [exec] (Terminal) {xterm}
+  [exec] (VS Code) {code --no-sandbox /workspace}
   [exec] (Google Chrome) {google-chrome-stable --no-sandbox --disable-dev-shm-usage --disable-gpu}
-  [separator]
-  [submenu] (Open in Browser)
-    [exec] (VS Code) {google-chrome-stable --no-sandbox --disable-dev-shm-usage --disable-gpu --app=http://localhost:13337}
-    [exec] (JupyterLab) {google-chrome-stable --no-sandbox --disable-dev-shm-usage --disable-gpu --app=http://localhost:8888}
-  [end]
+  [exec] (JupyterLab) {xterm -e "bash -l -c 'jupyter lab --ip=0.0.0.0 --no-browser --NotebookApp.token= --NotebookApp.password= --notebook-dir=/workspace; exec bash'"}
+  [exec] (Set Wallpaper) {feh --bg-fill /usr/share/pixmaps/wallpaper.png}
   [separator]
   [submenu] (Fluxbox)
     [config] (Configuration)

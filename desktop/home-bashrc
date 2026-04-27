@@ -1,0 +1,13 @@
+
+# micromamba / conda
+export MAMBA_ROOT_PREFIX=/opt/conda
+export PATH=/opt/conda/bin:$PATH
+eval "$(micromamba shell hook -s bash)"
+micromamba activate base 2>/dev/null || true
+alias conda=micromamba
+
+# User bin directory
+export PATH=$HOME/bin:$PATH
+
+# VS Code desktop
+export PATH=/usr/share/code/bin:$PATH

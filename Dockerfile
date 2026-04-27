@@ -16,10 +16,8 @@ RUN if [ "$WITH_CA" = "1" ] && [ -f /tmp/CombinedCA.cer ]; then \
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
     MAMBA_ROOT_PREFIX=/opt/conda \
-    CODE_SERVER_PORT=13337 \
     NOVNC_PORT=6080 \
-    VNC_PORT=5901 \
-    JUPYTER_PORT=8888
+    VNC_PORT=5901
 
 # Base tools + desktop stack for noVNC
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -67,10 +65,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     novnc \
     vim \
+    plocate \
     && locale-gen en_US.UTF-8 \
     && fc-cache -fv \
-    && convert -size 1920x1080 gradient:#1a2a4a-#2c5f8a /usr/share/pixmaps/wallpaper.png \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy pre-generated cyberpunk wallpaper
+COPY workspace/resources/wallpaper.png /usr/share/pixmaps/wallpaper.png
 
 # Patch noVNC: add F8 fullscreen toggle and prevent ESC from exiting fullscreen.
 # ESC is intercepted by the browser when in fullscreen; we immediately re-enter
@@ -112,12 +113,18 @@ p.write_text(html)
 print("noVNC patched OK")
 PYEOF
 
-# Install VS Code Server (code-server)
-# Set insecure=true in curlrc so that the install.sh child curl calls also
-# bypass SSL inspection. Removed afterwards to avoid leaking into the image.
-RUN echo "insecure" > /root/.curlrc \
-    && curl -fksSL https://code-server.dev/install.sh | sh \
-    && rm /root/.curlrc
+# Install VS Code desktop
+RUN curl -fksSL https://packages.microsoft.com/keys/microsoft.asc \
+    | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] \
+https://packages.microsoft.com/repos/code stable main" \
+    > /etc/apt/sources.list.d/vscode.list \
+    && echo 'Acquire::https::packages.microsoft.com::Verify-Peer "false";' \
+       > /etc/apt/apt.conf.d/99microsoft-ssl-bypass \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    code \
+    && rm -f /etc/apt/apt.conf.d/99microsoft-ssl-bypass \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Google Chrome
 # apt needs its own SSL bypass for dl.google.com (it ignores .curlrc).
@@ -149,25 +156,28 @@ RUN curl -kLs https://micro.mamba.pm/api/micromamba/linux-64/latest \
 # Make conda available in login shells
 RUN printf "export MAMBA_ROOT_PREFIX=/opt/conda\nexport PATH=/opt/conda/bin:$PATH\n" > /etc/profile.d/mamba.sh
 
-# Non-root dev user with sudo, with micromamba pre-initialised in .bashrc
-RUN useradd -m -s /bin/bash dev \
+# Non-root dev user with sudo.  We create a home directory for them at /home/dev, but this gets shadowed by the PVC mount at runtime.  
+# The start-dev-env.sh script detects this and copies in the default config files from /etc/dev-skel on first run.
+RUN useradd -M -s /bin/bash dev \
+    && mkdir -p /home/dev \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
-    && chmod 0440 /etc/sudoers.d/dev \
-    && printf '\n# micromamba / conda\nexport MAMBA_ROOT_PREFIX=/opt/conda\nexport PATH=/opt/conda/bin:$PATH\neval "$(micromamba shell hook -s bash)"\nmicromamba activate base 2>/dev/null || true\n' >> /home/dev/.bashrc \
-    && chown dev:dev /home/dev/.bashrc
+    && chmod 0440 /etc/sudoers.d/dev
 
 # Desktop configuration: fluxbox right-click menu and xterm colour theme
-COPY desktop/fluxbox-menu /home/dev/.fluxbox/menu
-COPY desktop/Xresources   /home/dev/.Xresources
-RUN chown -R dev:dev /home/dev/.fluxbox /home/dev/.Xresources
+# These are copied into /etc/dev-skel so that the PVC can be mounted over /home/dev.  These files get copied into the user's home
+# by 'start-dev-env.sh'
+COPY desktop/. /etc/dev-skel
+RUN chmod +x /etc/dev-skel/fluxbox-startup \
+      /etc/dev-skel/home-fehbg \
+    && chown -R dev:dev /etc/dev-skel/*
 
-WORKDIR /workspace
-RUN mkdir -p /workspace && chown -R dev:dev /workspace /home/dev /opt/conda
+WORKDIR /home/dev
+RUN chown -R dev:dev /home/dev /opt/conda
 
 COPY start-dev-env.sh /usr/local/bin/start-dev-env.sh
 RUN chmod +x /usr/local/bin/start-dev-env.sh
 
-EXPOSE 6080 5901 13337 8888
+EXPOSE 6080 5901
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/start-dev-env.sh"]

@@ -1,0 +1,9 @@
+#!/bin/bash
+# Fluxbox startup script (~/.fluxbox/startup).
+# This runs instead of fluxbox's default init so we control the wallpaper.
+
+# Restore wallpaper using the same mechanism fluxbox would use
+[ -x "$HOME/.fehbg" ] && "$HOME/.fehbg"
+
+exec fluxbox
+
