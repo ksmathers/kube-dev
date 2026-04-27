@@ -1,2 +1,2 @@
 export APPNAME="kube-dev"
-export VERSION="0.1.0"
+export VERSION="0.1.1"

@@ -55,7 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     wget \
     websockify \
-    x11vnc \
+    tigervnc-standalone-server \
     xdg-utils \
     xfonts-base \
     xfonts-75dpi \
@@ -64,7 +64,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-utils \
     x11-xserver-utils \
     xterm \
-    xserver-xorg-video-dummy \
     novnc \
     vim \
     plocate \
@@ -74,10 +73,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy pre-generated cyberpunk wallpaper
 COPY workspace/resources/wallpaper.png /usr/share/pixmaps/wallpaper.png
-
-# Xorg dummy-driver config: provides a large virtual framebuffer so RandR can
-# resize to any browser window size (used instead of Xvfb)
-COPY xorg-dummy.conf /etc/X11/xorg-dummy.conf
 
 # Install VS Code desktop
 RUN curl -fksSL https://packages.microsoft.com/keys/microsoft.asc \

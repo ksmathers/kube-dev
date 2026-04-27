@@ -37,45 +37,31 @@ install /etc/dev-skel/home-bashrc /home/dev/.bashrc
 
 chown -R dev:dev /home/dev /opt/conda || true
 
-# Pre-create X11 socket dir as root; Xvfb requires it with sticky-bit perms.
+# Pre-create X11 socket dir as root; Xvnc requires it with sticky-bit perms.
 mkdir -p /tmp/.X11-unix
 chmod 1777 /tmp/.X11-unix
 
-# ── X virtual display ────────────────────────────────────────────────────────
-# Uses the Xorg dummy driver instead of Xvfb so that RandR can resize the
-# framebuffer to any arbitrary size (required for noVNC resize=remote).
-# The dummy driver pre-allocates a 4K virtual framebuffer; xrandr --fb
-# crops the visible area on demand when the browser window is resized.
-# -ac  : disable access control so the dev user can connect without xauth
-echo "[start-dev-env] starting Xorg (dummy driver)..."
-Xorg :1 -config /etc/X11/xorg-dummy.conf -nolisten tcp -ac &
+# ── VNC/X server (TigerVNC Xvnc) ─────────────────────────────────────────────
+# Xvnc is both the X display server and the VNC server in a single process.
+# -AcceptSetDesktopSize lets noVNC dynamically resize the desktop to any
+# browser window size without pre-defined RandR mode lists.
+echo "[start-dev-env] starting Xvnc..."
+su - dev -c "Xvnc :1 -rfbport ${VNC_PORT} -SecurityTypes None -AlwaysShared \
+  -geometry 1920x1080 -depth 24 -AcceptSetDesktopSize" &
 
 # Wait until the X socket appears (up to 10 s)
 for i in $(seq 1 20); do
   [ -S /tmp/.X11-unix/X1 ] && break
   sleep 0.5
 done
-echo "[start-dev-env] Xorg ready"
+echo "[start-dev-env] Xvnc ready on :${VNC_PORT}"
 
 # ── Window manager ───────────────────────────────────────────────────────────
-# ~/.fluxbox/start-dev-env sets the wallpaper via feh then execs the WM
+# ~/.fluxbox/startup sets the wallpaper via feh then execs the WM
 su - dev -c "DISPLAY=:1 bash -c '
   xrdb -merge \$HOME/.Xresources 2>/dev/null
-  exec /usr/bin/startfluxbox   # runs ~/.fluxbox/startup, which execs fluxbox after setting the wallpaper
+  exec /usr/bin/startfluxbox
 '" &
-
-# ── VNC server ───────────────────────────────────────────────────────────────
-# -noshm : disable MIT-SHM; required in containers (no shared memory access)
-# Run as a bash background job (not x11vnc -bg) to avoid su returning exit 1
-echo "[start-dev-env] starting x11vnc..."
-su - dev -c "x11vnc -display :1 -forever -shared -rfbport ${VNC_PORT} -nopw -noshm -xrandr" &
-
-# Wait until x11vnc is actually listening (up to 15 s)
-for i in $(seq 1 30); do
-  bash -c "exec 3<>/dev/tcp/127.0.0.1/${VNC_PORT}" 2>/dev/null && break
-  sleep 0.5
-done
-echo "[start-dev-env] x11vnc ready on :${VNC_PORT}"
 
 # ── noVNC / websockify ───────────────────────────────────────────────────────
 echo "[start-dev-env] starting websockify on :${NOVNC_PORT} -> 127.0.0.1:${VNC_PORT}"
