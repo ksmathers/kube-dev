@@ -5,7 +5,7 @@ XTerm*background:       #1e1e1e
 XTerm*foreground:       #d4d4d4
 XTerm*cursorColor:      #aeafad
 XTerm*cursorBlink:      false
-XTerm*scrollBar:        false
+XTerm*scrollBar:        true
 XTerm*saveLines:        5000
 XTerm*borderWidth:      0
 XTerm*internalBorder:   8

@@ -61,8 +61,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xfonts-75dpi \
     xfonts-100dpi \
     xfonts-scalable \
+    x11-utils \
+    x11-xserver-utils \
     xterm \
-    xvfb \
+    xserver-xorg-video-dummy \
     novnc \
     vim \
     plocate \
@@ -73,45 +75,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy pre-generated cyberpunk wallpaper
 COPY workspace/resources/wallpaper.png /usr/share/pixmaps/wallpaper.png
 
-# Patch noVNC: add F8 fullscreen toggle and prevent ESC from exiting fullscreen.
-# ESC is intercepted by the browser when in fullscreen; we immediately re-enter
-# so the key is forwarded to the VNC session (e.g. vim) uninterrupted.
-RUN python3 - <<'PYEOF'
-import re, pathlib
-p = pathlib.Path("/usr/share/novnc/vnc.html")
-patch = """
-<script>
-/* --- custom fullscreen patch --- */
-(function () {
-  /* F8 toggles fullscreen */
-  document.addEventListener("keydown", function (e) {
-    if (e.code === "F8") {
-      e.preventDefault();
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        document.documentElement.requestFullscreen();
-      }
-      return;
-    }
-    /* ESC while fullscreen: re-enter after browser exits, so VNC still gets Escape */
-    if (e.code === "Escape" && document.fullscreenElement) {
-      setTimeout(function () {
-        if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen();
-        }
-      }, 80);
-    }
-  }, true);
-}());
-/* --- end fullscreen patch --- */
-</script>
-"""
-html = p.read_text()
-html = html.replace("</body>", patch + "</body>", 1)
-p.write_text(html)
-print("noVNC patched OK")
-PYEOF
+# Xorg dummy-driver config: provides a large virtual framebuffer so RandR can
+# resize to any browser window size (used instead of Xvfb)
+COPY xorg-dummy.conf /etc/X11/xorg-dummy.conf
 
 # Install VS Code desktop
 RUN curl -fksSL https://packages.microsoft.com/keys/microsoft.asc \

@@ -42,16 +42,20 @@ mkdir -p /tmp/.X11-unix
 chmod 1777 /tmp/.X11-unix
 
 # ── X virtual display ────────────────────────────────────────────────────────
+# Uses the Xorg dummy driver instead of Xvfb so that RandR can resize the
+# framebuffer to any arbitrary size (required for noVNC resize=remote).
+# The dummy driver pre-allocates a 4K virtual framebuffer; xrandr --fb
+# crops the visible area on demand when the browser window is resized.
 # -ac  : disable access control so the dev user can connect without xauth
-echo "[start-dev-env] starting Xvfb..."
-Xvfb :1 -screen 0 1920x1080x24 -nolisten tcp -ac &
+echo "[start-dev-env] starting Xorg (dummy driver)..."
+Xorg :1 -config /etc/X11/xorg-dummy.conf -nolisten tcp -ac &
 
 # Wait until the X socket appears (up to 10 s)
 for i in $(seq 1 20); do
   [ -S /tmp/.X11-unix/X1 ] && break
   sleep 0.5
 done
-echo "[start-dev-env] Xvfb ready"
+echo "[start-dev-env] Xorg ready"
 
 # ── Window manager ───────────────────────────────────────────────────────────
 # ~/.fluxbox/start-dev-env sets the wallpaper via feh then execs the WM
@@ -64,7 +68,7 @@ su - dev -c "DISPLAY=:1 bash -c '
 # -noshm : disable MIT-SHM; required in containers (no shared memory access)
 # Run as a bash background job (not x11vnc -bg) to avoid su returning exit 1
 echo "[start-dev-env] starting x11vnc..."
-su - dev -c "x11vnc -display :1 -forever -shared -rfbport ${VNC_PORT} -nopw -noshm" &
+su - dev -c "x11vnc -display :1 -forever -shared -rfbport ${VNC_PORT} -nopw -noshm -xrandr" &
 
 # Wait until x11vnc is actually listening (up to 15 s)
 for i in $(seq 1 30); do
