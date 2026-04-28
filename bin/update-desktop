@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# update-desktop — refresh home config files from /etc/dev-skel,
+# prompting for each file that differs from the reference version.
+set -uo pipefail
+
+SKEL=/etc/dev-skel
+
+declare -A SKEL_MAP=(
+    [fluxbox-init]=/home/dev/.fluxbox/init
+    [fluxbox-menu]=/home/dev/.fluxbox/menu
+    [fluxbox-startup]=/home/dev/.fluxbox/startup
+    [fluxbox-lastwallpaper]=/home/dev/.fluxbox/lastwallpaper
+    [fluxbox-overlay]=/home/dev/.fluxbox/overlay
+    [home-Xresources]=/home/dev/.Xresources
+    [home-fehbg]=/home/dev/.fehbg
+    [home-bashrc]=/home/dev/.bashrc
+)
+
+updated=0
+skipped=0
+unchanged=0
+
+for skel_file in "${!SKEL_MAP[@]}"; do
+    src="${SKEL}/${skel_file}"
+    dst="${SKEL_MAP[$skel_file]}"
+
+    if [[ ! -f "$src" ]]; then
+        echo "WARNING: source $src does not exist, skipping."
+        continue
+    fi
+
+    if [[ ! -e "$dst" ]]; then
+        echo "Installing $dst (not present)..."
+        mkdir -p "$(dirname "$dst")"
+        cp -a "$src" "$dst"
+        ((updated++))
+        continue
+    fi
+
+    if diff -q "$src" "$dst" > /dev/null 2>&1; then
+        ((unchanged++))
+        continue
+    fi
+
+    echo ""
+    echo "=== $dst differs from $src ==="
+    diff --color=auto "$dst" "$src" || true
+    echo ""
+    read -r -p "Apply update to $dst? [y/N] " answer
+    case "$answer" in
+        [yY]|[yY][eE][sS])
+            cp -a "$src" "$dst"
+            echo "  Updated."
+            ((updated++))
+            ;;
+        *)
+            echo "  Skipped."
+            ((skipped++))
+            ;;
+    esac
+done
+
+echo ""
+echo "Done. ${updated} updated, ${skipped} skipped, ${unchanged} already up to date."

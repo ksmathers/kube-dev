@@ -1,14 +1,15 @@
 #!/bin/bash
 . setting.sh
-export DOCKER_DEFAULT_PLATFORM=linux/amd64    # Ensure we build for AMD64, even on Apple Silicon hosts
-
+PLATFORM=linux/amd64
 WITH_CA=0
 for arg in "$@"; do
     case "$arg" in
         --with-ca) WITH_CA=1 ;;
+        --arm) PLATFORM=linux/arm64 ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
+export DOCKER_DEFAULT_PLATFORM="$PLATFORM"
 
 BUILD_ARGS=()
 if [[ $WITH_CA -eq 1 ]]; then

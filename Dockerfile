@@ -2,6 +2,7 @@ FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG WITH_CA=0
+ARG TARGETARCH
 
 # Optionally install a corporate CA bundle (copied in by build.sh --with-ca)
 COPY CombinedCA.cer* /tmp/
@@ -77,7 +78,7 @@ COPY workspace/resources/wallpaper.png /usr/share/pixmaps/wallpaper.png
 # Install VS Code desktop
 RUN curl -fksSL https://packages.microsoft.com/keys/microsoft.asc \
     | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] \
+    && echo "deb [arch=${TARGETARCH} signed-by=/usr/share/keyrings/microsoft.gpg] \
 https://packages.microsoft.com/repos/code stable main" \
     > /etc/apt/sources.list.d/vscode.list \
     && echo 'Acquire::https::packages.microsoft.com::Verify-Peer "false";' \
@@ -87,26 +88,21 @@ https://packages.microsoft.com/repos/code stable main" \
     && rm -f /etc/apt/apt.conf.d/99microsoft-ssl-bypass \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Google Chrome
-# apt needs its own SSL bypass for dl.google.com (it ignores .curlrc).
-# We write a per-host apt config that disables TLS verification for that repo
-# only, then remove it after the package is installed.
-RUN curl -fksSL https://dl.google.com/linux/linux_signing_key.pub \
-    | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] \
-https://dl.google.com/linux/chrome/deb/ stable main" \
-    > /etc/apt/sources.list.d/google-chrome.list \
-    && echo 'Acquire::https::dl.google.com::Verify-Peer "false";' \
-       > /etc/apt/apt.conf.d/99google-ssl-bypass \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    google-chrome-stable \
-    && rm -f /etc/apt/apt.conf.d/99google-ssl-bypass \
+# Install Firefox from Mozilla's apt repo (native deb, no snap, works on amd64 and arm64)
+RUN curl -fksSL https://packages.mozilla.org/apt/repo-signing-key.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/mozilla.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/mozilla.gpg] https://packages.mozilla.org/apt mozilla main" \
+        > /etc/apt/sources.list.d/mozilla.list \
+    && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" \
+        > /etc/apt/preferences.d/mozilla \
+    && apt-get update && apt-get install -y --no-install-recommends firefox \
     && rm -rf /var/lib/apt/lists/*
 
 # Install micromamba (Conda-compatible) and configure conda-forge
 # ssl_verify: false is set in .condarc during install to bypass corporate SSL
 # inspection, then replaced with the secure default afterwards.
-RUN curl -kLs https://micro.mamba.pm/api/micromamba/linux-64/latest \
+RUN MAMBA_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "linux-aarch64" || echo "linux-64") \
+    && curl -kLs https://micro.mamba.pm/api/micromamba/${MAMBA_ARCH}/latest \
     | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba \
     && mkdir -p /etc/conda /opt/conda \
     && printf "channels:\n  - conda-forge\nchannel_priority: strict\nssl_verify: false\n" > /etc/conda/.condarc \
@@ -114,8 +110,9 @@ RUN curl -kLs https://micro.mamba.pm/api/micromamba/linux-64/latest \
     && micromamba clean --all --yes \
     && printf "channels:\n  - conda-forge\nchannel_priority: strict\n" > /etc/conda/.condarc
 
-# Make conda available in login shells
-RUN printf "export MAMBA_ROOT_PREFIX=/opt/conda\nexport PATH=/opt/conda/bin:$PATH\n" > /etc/profile.d/mamba.sh
+# Make conda available in login shells; symlink conda -> micromamba for tools that expect the conda binary
+RUN printf "export MAMBA_ROOT_PREFIX=/opt/conda\nexport PATH=/opt/conda/bin:$PATH\n" > /etc/profile.d/mamba.sh \
+    && ln -s /usr/local/bin/micromamba /usr/local/bin/conda
 
 # Non-root dev user with sudo.  We create a home directory for them at /home/dev, but this gets shadowed by the PVC mount at runtime.  
 # The start-dev-env.sh script detects this and copies in the default config files from /etc/dev-skel on first run.
@@ -136,7 +133,8 @@ WORKDIR /home/dev
 RUN chown -R dev:dev /home/dev /opt/conda
 
 COPY start-dev-env.sh /usr/local/bin/start-dev-env.sh
-RUN chmod +x /usr/local/bin/start-dev-env.sh
+COPY bin/update-desktop /usr/local/bin/update-desktop
+RUN chmod +x /usr/local/bin/start-dev-env.sh /usr/local/bin/update-desktop
 
 EXPOSE 6080 5901
 

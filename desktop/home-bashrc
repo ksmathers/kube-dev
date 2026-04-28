@@ -5,6 +5,7 @@ export PATH=/opt/conda/bin:$PATH
 eval "$(micromamba shell hook -s bash)"
 micromamba activate base 2>/dev/null || true
 alias conda=micromamba
+alias code='code --no-sandbox --disable-dev-shm-usage'
 
 # User bin directory
 export PATH=$HOME/bin:$PATH

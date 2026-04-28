@@ -35,12 +35,14 @@ echo "Size: ${SIZE}  (CPU ${CPU_REQUEST}, RAM ${MEMORY_REQUEST})"
 PUSH_IMAGE=0
 CLEAN=0
 BUILD_IMAGE=0
+ARM=0
 for arg in "$@"; do
     case "$arg" in
         --push) PUSH_IMAGE=1 ;;
         --build) BUILD_IMAGE=1 ;;
         --build-push) BUILD_IMAGE=1; PUSH_IMAGE=1 ;;
         --clean) CLEAN=1 ;;
+        --arm) ARM=1 ;;
         --size=*) SIZE="${arg#--size=}"
             apply_size "${SIZE}"
             echo "Size override: ${SIZE}  (CPU ${CPU_REQUEST}, RAM ${MEMORY_REQUEST})"
@@ -55,7 +57,9 @@ JOB_NAME="${APPNAME}-${LCUSER}"
 
 if [ "${BUILD_IMAGE}" -eq 1 ]; then
     echo "Building image..."
-    bash "$(dirname "$0")/build.sh"
+    BUILD_ARGS=()
+    [[ "${ARM}" -eq 1 ]] && BUILD_ARGS+=(--arm)
+    bash "$(dirname "$0")/build.sh" "${BUILD_ARGS[@]}"
 fi
 
 push_image() {
@@ -123,6 +127,8 @@ spec:
         job-name: ${JOB_NAME}
     spec:
       restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/arch: $([ "${ARM}" -eq 1 ] && echo arm64 || echo amd64)
       containers:
         - name: ${DEPLOY_NAME}
           image: ${REPOSITORY_TAG}
@@ -138,6 +144,8 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /home/dev
+            - name: dshm
+              mountPath: /dev/shm
           resources:
             requests:
               cpu: "${CPU_REQUEST}"
@@ -149,6 +157,10 @@ spec:
         - name: workspace
           persistentVolumeClaim:
             claimName: ${PVC_NAME}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
 EOF
 
 # ── 3. Wait for the Job pod to reach Running ──────────────────────────────────
